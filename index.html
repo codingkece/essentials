@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Browse hundreds of essential oil diffuser recipes. Filter by ingredients."
+    />
+    <title>Diffuser Blends</title>
+    <link rel="stylesheet" href="style.css" />
+    <link
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌸</text></svg>"
+      rel="icon"
+    />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>Diffuser Blends</h1>
+      <div class="controls">
+        <div class="select-wrapper">
+          <label for="oil-select" class="sr-only">Filter by Oil</label>
+          <select id="oil-select">
+            <option value="" disabled selected>Add an oil to filter...</option>
+          </select>
+          <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7 10l5 5 5-5z" />
+          </svg>
+        </div>
+      </div>
+      <div id="active-filters" class="filter-container"></div>
+      <div id="result-count" class="result-count">Loading...</div>
+    </header>
+
+    <main>
+      <div id="recipe-grid" class="grid"></div>
+    </main>
+
+    <footer id="pagination" class="pagination"></footer>
+
+    <dialog id="recipe-modal" class="modal">
+      <div class="modal-wrapper">
+        <button id="close-modal" class="close-btn" aria-label="Close">
+          &times;
+        </button>
+        <img id="modal-img" src="" alt="" loading="eager" />
+      </div>
+    </dialog>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
