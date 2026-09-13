@@ -5,48 +5,194 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Browse hundreds of essential oil diffuser recipes. Filter by ingredients."
+      content="Discover curated essential oil diffuser recipes. Search by blend name, filter by ingredients, and save your favorites."
     />
     <title>Diffuser Blends</title>
-    <link rel="stylesheet" href="style.css" />
+    <script>
+      (function () {
+        const saved = localStorage.getItem("diffuser_theme");
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)",
+        ).matches;
+        document.documentElement.setAttribute(
+          "data-theme",
+          saved || (prefersDark ? "dark" : "light"),
+        );
+      })();
+    </script>
+    <link rel="stylesheet" href="assets/style.css" />
     <link
       href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🌸</text></svg>"
       rel="icon"
     />
   </head>
   <body>
+    <!-- Top Header -->
     <header class="app-header">
-      <h1>Diffuser Blends</h1>
-      <div class="controls">
+      <div class="header-container">
+        <div class="header-brand">
+          <span class="brand-icon" aria-hidden="true">🌸</span>
+          <div>
+            <h1>&nbsp;</h1>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <!-- View Tabs (All vs Saved) -->
+          <nav class="tab-nav" aria-label="Blend collections">
+            <button id="tab-all" class="tab-btn active" type="button">
+              All Blends
+            </button>
+            <button id="tab-saved" class="tab-btn" type="button">
+              <svg
+                class="tab-icon"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+                />
+              </svg>
+              <span>Saved</span>
+              <span id="saved-counter" class="saved-badge">0</span>
+            </button>
+          </nav>
+
+          <!-- Theme Toggle -->
+          <button
+            id="theme-toggle"
+            class="theme-toggle"
+            aria-label="Toggle dark/light mode"
+            title="Toggle theme"
+          >
+            <svg
+              class="sun-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+            <svg
+              class="moon-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Search & Filter Toolbar -->
+      <div class="toolbar">
+        <div class="search-wrapper">
+          <svg
+            class="search-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input
+            type="search"
+            id="search-input"
+            class="search-input"
+            placeholder="Search ..."
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button
+            id="clear-search-btn"
+            class="clear-search-btn"
+            type="button"
+            aria-label="Clear search text"
+            hidden
+          >
+            &times;
+          </button>
+        </div>
+
         <div class="select-wrapper">
-          <label for="oil-select" class="sr-only">Filter by Oil</label>
+          <label for="oil-select" class="sr-only"
+            >Filter by Essential Oil</label
+          >
           <select id="oil-select">
-            <option value="" disabled selected>Add an oil to filter...</option>
+            <option value="" disabled selected>
+              Filter by essential oil...
+            </option>
           </select>
           <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M7 10l5 5 5-5z" />
           </svg>
         </div>
+
+        <button id="clear-filters-btn" class="clear-btn" type="button" hidden>
+          Clear all
+        </button>
       </div>
-      <div id="active-filters" class="filter-container"></div>
-      <div id="result-count" class="result-count">Loading...</div>
+
+      <div
+        id="active-filters"
+        class="filter-container"
+        aria-live="polite"
+      ></div>
+
+      <div class="status-bar">
+        <span id="result-count" class="result-count">Loading recipes...</span>
+      </div>
     </header>
 
+    <!-- Main Grid -->
     <main>
-      <div id="recipe-grid" class="grid"></div>
+      <div id="recipe-grid" class="grid" role="region" aria-live="polite"></div>
     </main>
 
+    <!-- Floating Dock Pagination -->
     <footer id="pagination" class="pagination"></footer>
 
+    <!-- Recipe Detail Modal -->
     <dialog id="recipe-modal" class="modal">
       <div class="modal-wrapper">
-        <button id="close-modal" class="close-btn" aria-label="Close">
-          &times;
-        </button>
-        <img id="modal-img" src="" alt="" loading="eager" />
+        <div class="modal-card">
+          <button id="close-modal" class="close-btn" aria-label="Close dialog">
+            &times;
+          </button>
+
+          <div class="modal-image-pane">
+            <img id="modal-img" src="" alt="" loading="eager" />
+          </div>
+
+          <div class="modal-footer-bar">
+            <h2 id="modal-title" class="modal-title">Blend Name</h2>
+            <button
+              id="modal-fav-btn"
+              class="modal-icon-action-btn"
+              type="button"
+              aria-label="Save blend"
+              title="Save blend"
+            ></button>
+          </div>
+        </div>
       </div>
     </dialog>
 
-    <script type="module" src="app.js"></script>
+    <script type="module" src="assets/js/app.js"></script>
   </body>
 </html>
