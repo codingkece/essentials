@@ -85,7 +85,7 @@ export function openModal(recipe) {
   activeModalRecipe = recipe;
 
   if (elements.modalImg) {
-    elements.modalImg.src = `assets/images/${recipe.id}.webp`;
+    elements.modalImg.src = `images/${recipe.id}.webp`;
     elements.modalImg.alt = recipe.name;
   }
   if (elements.modalTitle) {
@@ -215,7 +215,7 @@ export function renderGrid() {
     cardWrapper.className = "card-img-wrapper";
     cardWrapper.innerHTML = `
       <img 
-        src="assets/images/${recipe.id}.webp" 
+        src="images/${recipe.id}.webp" 
         alt="${recipe.name}" 
         class="card-img" 
         loading="lazy" 
