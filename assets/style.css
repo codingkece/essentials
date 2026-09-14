@@ -164,7 +164,7 @@ h1 {
 }
 
 /* ============================================================
-   SEGMENTED CONTROL (TABS) & THEME TOGGLE
+   SEGMENTED CONTROL (TABS) & THEME / ACTION BUTTONS
    ============================================================ */
 .tab-nav {
   display: inline-flex;
@@ -240,7 +240,8 @@ h1 {
   color: var(--accent);
 }
 
-/* Theme Toggle Button */
+/* Header Icon Action Buttons (Export, Theme Toggle) */
+.action-header-btn,
 .theme-toggle {
   appearance: none;
   background: var(--bg-track);
@@ -256,12 +257,14 @@ h1 {
   transition: all var(--transition-fast);
 }
 
+.action-header-btn:hover,
 .theme-toggle:hover {
   color: var(--text-main);
   background: var(--bg-elevated);
   border-color: var(--border-focus);
 }
 
+.action-header-btn svg,
 .theme-toggle svg {
   width: 17px;
   height: 17px;
@@ -445,10 +448,10 @@ select {
    ============================================================ */
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  grid-template-columns: 1fr;
   gap: 1.15rem;
-  padding: 1.35rem 1.25rem;
-  max-width: 1160px;
+  padding: 1.15rem 1rem;
+  max-width: 480px;
   margin: 0 auto;
 }
 
@@ -456,6 +459,8 @@ select {
   .grid {
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 1.35rem;
+    padding: 1.35rem 1.25rem;
+    max-width: 1160px;
   }
 }
 
@@ -472,6 +477,13 @@ select {
     transform var(--transition-smooth),
     box-shadow var(--transition-smooth),
     border-color var(--transition-smooth);
+}
+
+.card.card-highlight {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-subtle), var(--shadow-md);
+  transform: translateY(-2px);
+  transition: all 0.35s ease;
 }
 
 .card:hover {
@@ -687,7 +699,7 @@ dialog {
 }
 
 dialog::backdrop {
-  background: rgba(0, 0, 0, 0.72);
+  background: rgba(0, 0, 0, 0.82);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
 }
@@ -709,8 +721,9 @@ dialog::backdrop {
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
-  max-width: 90vw;
-  max-height: 90vh;
+  width: 100%;
+  max-width: min(92vw, 680px);
+  max-height: calc(100dvh - 2rem);
   overflow: hidden;
 }
 
@@ -719,44 +732,53 @@ dialog::backdrop {
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 100%;
   min-height: 0;
   flex: 1 1 auto;
 }
 
 #modal-img {
-  max-width: 88vw;
-  max-height: calc(88vh - 58px);
-  width: auto;
+  width: 100%;
   height: auto;
+  max-height: calc(90dvh - 65px);
   object-fit: contain;
   display: block;
 }
 
 .modal-footer-bar {
-  padding: 0.75rem 1.15rem;
+  padding: 0.75rem 1rem;
   background: var(--bg-surface);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.75rem;
   border-top: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .modal-title {
-  font-size: 1.1rem;
+  font-size: 1.05rem;
   font-weight: 700;
   color: var(--text-main);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.modal-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
 }
 
 .modal-icon-action-btn {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   color: var(--text-main);
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
@@ -766,8 +788,14 @@ dialog::backdrop {
   transition: all var(--transition-fast);
 }
 
-.modal-icon-action-btn:hover {
+.modal-icon-action-btn:hover:not(:disabled) {
   border-color: var(--border-focus);
+  background: var(--bg-surface);
+}
+
+.modal-icon-action-btn:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
 }
 
 .modal-icon-action-btn.is-saved {
@@ -782,19 +810,19 @@ dialog::backdrop {
 }
 
 .modal-icon-action-btn svg {
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
 }
 
 .close-btn {
   position: absolute;
   top: 10px;
   right: 10px;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.6);
   color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  width: 32px;
-  height: 32px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   font-size: 20px;
   display: flex;
@@ -809,4 +837,45 @@ dialog::backdrop {
 
 .close-btn:hover {
   transform: scale(1.08);
+}
+
+/* Mobile full-bleed scaling */
+@media (max-width: 640px) {
+  .modal-wrapper {
+    padding: 0.4rem;
+  }
+
+  .modal-card {
+    width: calc(100vw - 0.8rem);
+    max-width: 100%;
+    max-height: calc(100dvh - 0.8rem);
+    border-radius: var(--radius-md);
+  }
+
+  #modal-img {
+    max-height: calc(100dvh - 75px);
+  }
+
+  .modal-footer-bar {
+    padding: 0.6rem 0.75rem;
+    gap: 0.5rem;
+  }
+
+  .modal-title {
+    font-size: 0.95rem;
+  }
+
+  .modal-actions {
+    gap: 0.35rem;
+  }
+
+  .modal-icon-action-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  .modal-icon-action-btn svg {
+    width: 16px;
+    height: 16px;
+  }
 }

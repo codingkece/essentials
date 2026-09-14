@@ -4,6 +4,7 @@ import {
   toggleFavorite,
   isRecipeSaved,
   setPage,
+  getCurrentPageRecipes,
 } from "./state.js";
 
 export const elements = {
@@ -19,10 +20,14 @@ export const elements = {
   tabAll: document.getElementById("tab-all"),
   tabSaved: document.getElementById("tab-saved"),
   themeToggle: document.getElementById("theme-toggle"),
+  exportBtn: document.getElementById("export-btn"),
   modal: document.getElementById("recipe-modal"),
   modalImg: document.getElementById("modal-img"),
   modalTitle: document.getElementById("modal-title"),
   modalFavBtn: document.getElementById("modal-fav-btn"),
+  modalShareBtn: document.getElementById("modal-share-btn"),
+  modalPrevBtn: document.getElementById("modal-prev-btn"),
+  modalNextBtn: document.getElementById("modal-next-btn"),
   closeModal: document.getElementById("close-modal"),
 };
 
@@ -41,7 +46,24 @@ const TRASH_ICON_SVG = `
   </svg>
 `;
 
+const SHARE_ICON_SVG = `
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="18" cy="5" r="3"></circle>
+    <circle cx="6" cy="12" r="3"></circle>
+    <circle cx="18" cy="19" r="3"></circle>
+    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+  </svg>
+`;
+
+const CHECK_ICON_SVG = `
+  <svg viewBox="0 0 24 24" fill="none" stroke="#235c43" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <polyline points="20 6 9 17 4 12"></polyline>
+  </svg>
+`;
+
 let activeModalRecipe = null;
+let currentModalIndex = -1;
 
 function applyFavoriteVisuals(btnEl, isSaved) {
   if (!btnEl) return;
@@ -59,19 +81,29 @@ export function handleFavoriteToggle(recipeId, triggeredButton = null) {
   const isNowSaved = toggleFavorite(recipeId);
   renderSavedCounter();
 
-  // If in "saved" view, re-render to reflect removal
   if (state.viewMode === "saved") {
     renderGrid();
     renderPagination();
+    if (elements.modal?.open) {
+      const collection = state.filteredRecipes;
+      if (collection.length === 0) {
+        closeModal();
+      } else {
+        const nextIndex = Math.min(
+          Math.max(0, currentModalIndex),
+          collection.length - 1
+        );
+        updateModalContent(collection[nextIndex], collection, nextIndex);
+      }
+    }
     return;
   }
 
-  // Otherwise, surgically update matching DOM buttons with NO layout redraw
   if (triggeredButton) {
     applyFavoriteVisuals(triggeredButton, isNowSaved);
   } else {
     const cardBtn = elements.grid?.querySelector(
-      `.card-action-btn[data-id="${recipeId}"]`,
+      `.card-action-btn[data-id="${recipeId}"]`
     );
     if (cardBtn) applyFavoriteVisuals(cardBtn, isNowSaved);
   }
@@ -81,8 +113,14 @@ export function handleFavoriteToggle(recipeId, triggeredButton = null) {
   }
 }
 
-export function openModal(recipe) {
+function updateModalContent(
+  recipe,
+  collection = state.filteredRecipes,
+  index = -1
+) {
   activeModalRecipe = recipe;
+  currentModalIndex =
+    index >= 0 ? index : collection.findIndex((r) => r.id === recipe?.id);
 
   if (elements.modalImg) {
     elements.modalImg.src = `images/${recipe.id}.webp`;
@@ -93,15 +131,262 @@ export function openModal(recipe) {
   }
 
   updateModalFavButton(recipe.id);
+
+  const hasMultiple = collection.length > 1;
+  if (elements.modalPrevBtn) {
+    elements.modalPrevBtn.disabled = !hasMultiple || currentModalIndex <= 0;
+  }
+  if (elements.modalNextBtn) {
+    elements.modalNextBtn.disabled =
+      !hasMultiple || currentModalIndex >= collection.length - 1;
+  }
+}
+
+export function openModal(recipe) {
+  if (!recipe) return;
+  const collection = state.filteredRecipes;
+  const index = collection.findIndex((r) => r.id === recipe.id);
+  updateModalContent(recipe, collection, index);
   elements.modal?.showModal();
 }
 
+/**
+ * Closes modal and navigates to the page where the recipe belongs,
+ * scrolling directly to the item so the user doesn't have to scroll again.
+ */
 export function closeModal() {
+  const lastRecipe = activeModalRecipe;
+
   elements.modal?.close();
+  activeModalRecipe = null;
+  currentModalIndex = -1;
+
+  if (!lastRecipe) return;
+
+  const itemIndex = state.filteredRecipes.findIndex((r) => r.id === lastRecipe.id);
+  if (itemIndex === -1) return;
+
+  const targetPage = Math.floor(itemIndex / state.itemsPerPage) + 1;
+
+  if (targetPage !== state.currentPage) {
+    setPage(targetPage);
+    renderAll();
+  }
+
+  // Smoothly center the card in viewport
+  requestAnimationFrame(() => {
+    const cardEl = elements.grid?.querySelector(`.card[data-id="${lastRecipe.id}"]`);
+    if (cardEl) {
+      cardEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      cardEl.classList.add("card-highlight");
+      setTimeout(() => cardEl.classList.remove("card-highlight"), 1400);
+    }
+  });
 }
 
 export function getActiveModalRecipe() {
   return activeModalRecipe;
+}
+
+/**
+ * Navigates across the ENTIRE collection of search/filter results
+ */
+export function navigateModal(direction) {
+  const collection = state.filteredRecipes;
+  if (collection.length === 0) return;
+
+  let index = currentModalIndex;
+  if (index === -1) {
+    index = collection.findIndex((r) => r.id === activeModalRecipe?.id);
+  }
+
+  const targetIndex = index + direction;
+  if (targetIndex >= 0 && targetIndex < collection.length) {
+    updateModalContent(collection[targetIndex], collection, targetIndex);
+  }
+}
+
+export async function shareCurrentRecipe() {
+  const recipe = activeModalRecipe;
+  if (!recipe) return;
+
+  const shareText = recipe.value
+    ? `${recipe.name} Recipe:\n${recipe.value}`
+    : `${recipe.name}`;
+
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: recipe.name,
+        text: shareText,
+        url: window.location.href,
+      });
+      return;
+    } catch (err) {
+      if (err.name === "AbortError") return;
+    }
+  }
+
+  try {
+    await navigator.clipboard.writeText(`${shareText}\n${window.location.href}`);
+    if (elements.modalShareBtn) {
+      elements.modalShareBtn.innerHTML = CHECK_ICON_SVG;
+      elements.modalShareBtn.title = "Copied to clipboard!";
+      setTimeout(() => {
+        elements.modalShareBtn.innerHTML = SHARE_ICON_SVG;
+        elements.modalShareBtn.title = "Share blend";
+      }, 2000);
+    }
+  } catch (error) {
+    console.error("Clipboard copy failed:", error);
+  }
+}
+
+/**
+ * Exports favorites with images linked via absolute URLs & clickable anchors
+ */
+export function exportFavoritesAsHtml() {
+  const savedRecipes = state.recipes.filter((r) => state.savedIds.has(r.id));
+
+  if (savedRecipes.length === 0) {
+    alert("You haven't saved any favorites yet. Save some blends first to export them!");
+    return;
+  }
+
+  const recipeCardsHtml = savedRecipes
+    .map((r) => {
+      // Resolve absolute URL so images load regardless of where the HTML file is saved
+      const absoluteImgUrl = new URL(`images/${r.id}.webp`, window.location.href).href;
+
+      const ingredientList = (r.value || r.ingredients.join(", "))
+        .split(",")
+        .map((item) => `<li>${item.trim()}</li>`)
+        .join("");
+
+      return `
+      <article class="card">
+        <div class="card-img-wrap">
+          <a href="${absoluteImgUrl}" target="_blank" rel="noopener noreferrer" title="View full image">
+            <img src="${absoluteImgUrl}" alt="${r.name}" loading="lazy" onerror="this.parentElement.style.display='none'">
+          </a>
+        </div>
+        <div class="card-body">
+          <h2>${r.name}</h2>
+          <ul class="ingredients">
+            ${ingredientList}
+          </ul>
+        </div>
+      </article>
+      `;
+    })
+    .join("\n");
+
+  const fullHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Favorite Diffuser Blends</title>
+  <style>
+    :root {
+      --primary: #235c43;
+      --bg: #f8faf9;
+      --card-bg: #ffffff;
+      --text: #111815;
+      --text-muted: #566760;
+      --border: rgba(0,0,0,0.1);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b0f0d;
+        --card-bg: #121815;
+        --text: #f2f5f3;
+        --text-muted: #90a198;
+        --border: rgba(255,255,255,0.1);
+      }
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 2rem 1.5rem;
+    }
+    .header {
+      max-width: 960px;
+      margin: 0 auto 2rem;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 1rem;
+    }
+    h1 { margin: 0 0 0.25rem; color: var(--primary); }
+    .subtitle { color: var(--text-muted); font-size: 0.9rem; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1.5rem;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      break-inside: avoid;
+    }
+    .card-img-wrap {
+      width: 100%;
+      aspect-ratio: 1/1;
+      background: rgba(0,0,0,0.05);
+    }
+    .card-img-wrap a {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    .card-img-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transition: transform 0.2s ease;
+    }
+    .card-img-wrap a:hover img {
+      transform: scale(1.02);
+    }
+    .card-body { padding: 1.2rem; }
+    .card-body h2 { font-size: 1.15rem; margin: 0 0 0.75rem; }
+    .ingredients { margin: 0; padding-left: 1.25rem; color: var(--text-muted); line-height: 1.5; }
+    @media print {
+      body { background: #ffffff; color: #000000; padding: 0; }
+      .grid { grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+      .card { box-shadow: none; border: 1px solid #ccc; }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>My Favorite Diffuser Blends</h1>
+    <p class="subtitle">Exported on ${new Date().toLocaleDateString()} &bull; ${savedRecipes.length} Blend${savedRecipes.length === 1 ? "" : "s"}</p>
+  </header>
+  <main class="grid">
+    ${recipeCardsHtml}
+  </main>
+</body>
+</html>`;
+
+  const blob = new Blob([fullHtml], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `diffuser-favorites-${new Date().toISOString().slice(0, 10)}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 export function renderOilOptions() {
@@ -124,7 +409,6 @@ export function renderActiveFilters() {
   if (!elements.filterContainer) return;
   elements.filterContainer.innerHTML = "";
 
-  // Oil filter chips only apply in the "All Blends" view
   if (state.viewMode === "saved") {
     if (elements.clearFiltersBtn) {
       elements.clearFiltersBtn.hidden = !state.searchQuery;
@@ -160,9 +444,7 @@ export function renderGrid() {
   elements.grid.innerHTML = "";
 
   const total = state.filteredRecipes.length;
-  const start = (state.currentPage - 1) * state.itemsPerPage;
-  const end = start + state.itemsPerPage;
-  const itemsToShow = state.filteredRecipes.slice(start, end);
+  const itemsToShow = getCurrentPageRecipes();
 
   if (elements.resultCount) {
     if (state.viewMode === "saved") {
@@ -197,6 +479,7 @@ export function renderGrid() {
 
     const card = document.createElement("article");
     card.className = "card";
+    card.setAttribute("data-id", recipe.id); // Used for smooth-scroll on modal close
     card.style.animationDelay = `${index * 25}ms`;
     card.title = recipe.name;
 
@@ -235,7 +518,7 @@ export function renderPagination() {
   if (!elements.pagination) return;
   elements.pagination.innerHTML = "";
   const totalPages = Math.ceil(
-    state.filteredRecipes.length / state.itemsPerPage,
+    state.filteredRecipes.length / state.itemsPerPage
   );
 
   if (totalPages <= 1) {
@@ -280,7 +563,7 @@ export function renderPagination() {
   pageInput.title = "Jump to page";
   pageInput.setAttribute(
     "aria-label",
-    `Current page ${state.currentPage} of ${totalPages}`,
+    `Current page ${state.currentPage} of ${totalPages}`
   );
 
   pageInput.onchange = () => {

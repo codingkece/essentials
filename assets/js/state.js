@@ -11,7 +11,7 @@ export const state = {
   viewMode: "all",
   searchQuery: "",
   currentPage: 1,
-  itemsPerPage: 12,
+  itemsPerPage: 10,
   filteredRecipes: [],
 };
 
@@ -145,4 +145,9 @@ export function filterRecipes() {
   if (state.currentPage > totalPages) {
     state.currentPage = 1;
   }
+}
+
+export function getCurrentPageRecipes() {
+  const start = (state.currentPage - 1) * state.itemsPerPage;
+  return state.filteredRecipes.slice(start, start + state.itemsPerPage);
 }

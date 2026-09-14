@@ -13,6 +13,9 @@ import {
   closeModal,
   getActiveModalRecipe,
   handleFavoriteToggle,
+  navigateModal,
+  shareCurrentRecipe,
+  exportFavoritesAsHtml,
 } from "./ui.js";
 
 function setupEventListeners() {
@@ -82,6 +85,68 @@ function setupEventListeners() {
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && elements.modal?.open) {
       closeModal();
+    }
+  });
+
+  // Modal navigation arrows
+  elements.modalPrevBtn?.addEventListener("click", () => navigateModal(-1));
+  elements.modalNextBtn?.addEventListener("click", () => navigateModal(1));
+
+  // Keyboard navigation
+  window.addEventListener("keydown", (e) => {
+    if (!elements.modal?.open) return;
+
+    if (e.key === "Escape") {
+      closeModal();
+    } else if (e.key === "ArrowLeft") {
+      navigateModal(-1);
+    } else if (e.key === "ArrowRight") {
+      navigateModal(1);
+    }
+  });
+
+  // Export Favorites button
+  elements.exportBtn?.addEventListener("click", exportFavoritesAsHtml);
+
+  elements.modalPrevBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    navigateModal(-1);
+  });
+
+  elements.modalNextBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    navigateModal(1);
+  });
+
+  // Modal navigation & sharing
+  elements.modalShareBtn?.addEventListener("click", shareCurrentRecipe);
+
+  elements.closeModal?.addEventListener("click", closeModal);
+
+  elements.modal?.addEventListener("click", (e) => {
+    if (
+      e.target === elements.modal ||
+      e.target.classList.contains("modal-wrapper")
+    ) {
+      closeModal();
+    }
+  });
+
+  elements.modalFavBtn?.addEventListener("click", () => {
+    const recipe = getActiveModalRecipe();
+    if (!recipe) return;
+    handleFavoriteToggle(recipe.id);
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (!elements.modal?.open) return;
+
+    if (e.key === "Escape") {
+      closeModal();
+    } else if (e.key === "ArrowLeft") {
+      navigateModal(-1);
+    } else if (e.key === "ArrowRight") {
+      navigateModal(1);
     }
   });
 }
