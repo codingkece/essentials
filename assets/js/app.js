@@ -7,6 +7,7 @@ import {
   clearAllFilters,
   initSavedFavorites,
   updateSavedIdsFromSync,
+  filterRecipes,
   state,
 } from "./state.js";
 import {
@@ -26,6 +27,7 @@ import {
   onAuthChange,
   syncFavorites,
   flushQueue,
+  onCrossTabFavoriteUpdate,
 } from "./sync.js";
 
 function setupEventListeners() {
@@ -71,7 +73,7 @@ function setupEventListeners() {
     renderAll();
   });
 
-  // Modal navigation & interactions
+  // Modal navigation
   elements.closeModal?.addEventListener("click", closeModal);
 
   elements.modal?.addEventListener("click", (e) => {
@@ -113,13 +115,38 @@ function setupEventListeners() {
     }
   });
 
-  // Auto-sync when connection is restored
+  // Re-sync when network returns
   window.addEventListener("online", async () => {
     await flushQueue();
     await syncFavorites(state.savedIds, (reconciled) => {
       updateSavedIdsFromSync(reconciled);
       renderAll();
     });
+  });
+
+  // Real-time synchronization across browser tabs
+  onCrossTabFavoriteUpdate(({ recipeId, isSaved }) => {
+    if (isSaved) {
+      state.savedIds.add(String(recipeId));
+    } else {
+      state.savedIds.delete(String(recipeId));
+    }
+    if (state.viewMode === "saved") {
+      filterRecipes();
+    }
+    renderAll();
+  });
+
+  window.addEventListener("storage", (e) => {
+    if (e.key === "diffuser_saved_ids" && e.newValue) {
+      try {
+        const ids = new Set(JSON.parse(e.newValue));
+        updateSavedIdsFromSync(ids);
+        renderAll();
+      } catch (err) {
+        console.warn("Storage sync parse error:", err);
+      }
+    }
   });
 
   setupAuthEvents();
@@ -134,7 +161,7 @@ async function init() {
       elements.resultCount.textContent = "Loading blend collection...";
     }
 
-    // 1. Initialize Dexie storage and load offline favorites
+    // 1. Load favorites from Dexie
     await initSavedFavorites();
 
     // 2. Fetch recipes collection
@@ -149,7 +176,7 @@ async function init() {
     renderOilOptions();
     renderAll();
 
-    // 3. Connect Supabase & sync if user session exists
+    // 3. Connect Supabase & reconcile cloud state
     await getSupabase();
     updateAuthModalView();
 
@@ -163,7 +190,6 @@ async function init() {
       }
     });
 
-    // Run initial sync if already signed in
     await syncFavorites(state.savedIds, (reconciled) => {
       updateSavedIdsFromSync(reconciled);
       renderAll();

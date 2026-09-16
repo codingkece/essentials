@@ -6,6 +6,39 @@ let supabaseClient = null;
 let currentUser = null;
 let isSyncing = false;
 const authChangeListeners = [];
+const crossTabListeners = [];
+
+// ============================================================
+// CROSS-TAB BROADCAST CHANNEL
+// ============================================================
+const tabChannel =
+  typeof BroadcastChannel !== "undefined"
+    ? new BroadcastChannel("diffuser_tab_sync")
+    : null;
+
+if (tabChannel) {
+  tabChannel.onmessage = (event) => {
+    if (event.data?.type === "FAVORITE_TOGGLED") {
+      crossTabListeners.forEach((cb) => cb(event.data));
+    }
+  };
+}
+
+export function onCrossTabFavoriteUpdate(callback) {
+  if (typeof callback === "function") {
+    crossTabListeners.push(callback);
+  }
+}
+
+export function broadcastFavoriteChange(recipeId, isSaved) {
+  if (tabChannel) {
+    tabChannel.postMessage({
+      type: "FAVORITE_TOGGLED",
+      recipeId: String(recipeId),
+      isSaved: Boolean(isSaved),
+    });
+  }
+}
 
 // ============================================================
 // DEXIE.JS LOCAL DATABASE (OFFLINE-FIRST STORAGE)
@@ -17,7 +50,7 @@ export function initLocalDb() {
 
   const DexieClass = window.Dexie;
   if (!DexieClass) {
-    console.warn("Dexie is not available on window. Falling back to in-memory/localStorage.");
+    console.warn("Dexie is not available on window. Falling back to localStorage.");
     return null;
   }
 
@@ -30,15 +63,10 @@ export function initLocalDb() {
   return db;
 }
 
-/**
- * Loads all saved recipe IDs from Dexie, migrating legacy localStorage if needed.
- */
 export async function loadSavedIdsFromLocal() {
   const database = initLocalDb();
-
-  // Legacy localStorage migration
   const legacySaved = JSON.parse(
-    localStorage.getItem("diffuser_saved_ids") || "[]"
+    localStorage.getItem("diffuser_saved_ids") || "[]",
   );
 
   if (!database) {
@@ -47,18 +75,19 @@ export async function loadSavedIdsFromLocal() {
 
   try {
     const count = await database.favorites.count();
-    if (count === 0 && legacySaved.length > 0) {
+    // Only migrate legacy if Dexie has never been populated
+    if (count === 0 && legacySaved.length > 0 && !localStorage.getItem("diffuser_migrated")) {
       const initialItems = legacySaved.map((id) => ({
         id: String(id),
         updatedAt: Date.now(),
       }));
       await database.favorites.bulkPut(initialItems);
+      localStorage.setItem("diffuser_migrated", "true");
     }
 
     const records = await database.favorites.toArray();
     const idSet = new Set(records.map((r) => String(r.id)));
 
-    // Keep localStorage backup synced
     localStorage.setItem("diffuser_saved_ids", JSON.stringify(Array.from(idSet)));
     return idSet;
   } catch (err) {
@@ -67,9 +96,6 @@ export async function loadSavedIdsFromLocal() {
   }
 }
 
-/**
- * Saves favorite locally in Dexie and schedules cloud sync.
- */
 export async function persistFavoriteLocal(recipeId, isSaved) {
   const idStr = String(recipeId);
   const database = initLocalDb();
@@ -82,7 +108,12 @@ export async function persistFavoriteLocal(recipeId, isSaved) {
         await database.favorites.delete(idStr);
       }
 
-      // Add to sync queue for Supabase
+      // Add operation to offline sync queue (replacing existing pending tasks for this item)
+      await database.syncQueue
+        .where("recipeId")
+        .equals(idStr)
+        .delete();
+
       await database.syncQueue.add({
         recipeId: idStr,
         action: isSaved ? "insert" : "delete",
@@ -93,9 +124,11 @@ export async function persistFavoriteLocal(recipeId, isSaved) {
     }
   }
 
-  // If online, attempt to flush queue to Supabase
-  if (navigator.onLine) {
-    triggerBackgroundSync();
+  // Flush immediately without debounce to eliminate cross-tab race conditions
+  if (navigator.onLine && currentUser) {
+    flushQueue().catch((err) =>
+      console.warn("Background sync error:", err)
+    );
   }
 }
 
@@ -151,7 +184,7 @@ export async function signInWithEmail(email, password) {
   const client = await getSupabase();
   if (!client) {
     throw new Error(
-      "Supabase client is not configured. Please check your Supabase URL & Key in sync.js.",
+      "Supabase client is not configured. Please set your Supabase URL & Key in sync.js.",
     );
   }
 
@@ -178,7 +211,7 @@ export async function signOutUser() {
 }
 
 // ============================================================
-// SYNC ENGINE: DEXIE <-> SUPABASE
+// SYNC ENGINE (DELETION-AWARE RECONCILIATION)
 // ============================================================
 export async function flushQueue() {
   if (!navigator.onLine || !currentUser) return;
@@ -207,26 +240,22 @@ export async function flushQueue() {
         const { error } = await client
           .from(SUPABASE_TABLE)
           .delete()
-          .match({ user_id: userId, recipe_id: item.recipeId });
+          .eq("user_id", userId)
+          .eq("recipe_id", item.recipeId);
         if (error) throw error;
       }
 
-      // Successfully pushed: remove item from queue
       await database.syncQueue.delete(item.queueId);
     } catch (err) {
       console.warn(`Supabase offline/sync failed for item ${item.recipeId}:`, err);
-      // Stop flushing if network/server is down
       break;
     }
   }
 }
 
 /**
- * Bidirectional reconciliation:
- * 1. Flushes queued mutations to Supabase.
- * 2. Fetches remote favorites.
- * 3. Pushes any Dexie-stored items not yet in remote.
- * 4. Merges remote items into Dexie and invokes onReconciled callback.
+ * Reconciles local and cloud favorites.
+ * Respects deletions so un-favorited recipes never resurrect.
  */
 export async function syncFavorites(currentLocalIds, onReconciled) {
   if (isSyncing || !navigator.onLine || !currentUser) return;
@@ -236,6 +265,7 @@ export async function syncFavorites(currentLocalIds, onReconciled) {
     const client = await getSupabase();
     if (!client) return;
 
+    // 1. Process pending insertions and deletions first
     await flushQueue();
 
     const userId = currentUser.id;
@@ -246,60 +276,59 @@ export async function syncFavorites(currentLocalIds, onReconciled) {
 
     if (error) throw error;
 
-    const remoteIds = new Set(
+    const database = initLocalDb();
+    const pendingQueue = database ? await database.syncQueue.toArray() : [];
+    const pendingInserts = new Set(
+      pendingQueue.filter((q) => q.action === "insert").map((q) => String(q.recipeId)),
+    );
+    const pendingDeletes = new Set(
+      pendingQueue.filter((q) => q.action === "delete").map((q) => String(q.recipeId)),
+    );
+
+    // 2. Build the reconciled set starting from remote source of truth
+    const reconciledIds = new Set(
       (remoteItems || []).map((i) => String(i.recipe_id)),
     );
-    const database = initLocalDb();
-    const mergedIds = new Set(currentLocalIds);
 
-    // Push local favorites missing on remote
-    const missingInRemote = [];
-    for (const id of currentLocalIds) {
-      if (!remoteIds.has(id)) {
-        missingInRemote.push({ user_id: userId, recipe_id: id });
+    // Any local item that failed to push due to offline stays inserted
+    for (const id of pendingInserts) {
+      reconciledIds.add(id);
+    }
+
+    // Any local item that is queued for deletion stays removed
+    for (const id of pendingDeletes) {
+      reconciledIds.delete(id);
+    }
+
+    // 3. Update local Dexie storage to match the reconciled set
+    if (database) {
+      await database.favorites.clear();
+      const recordsToStore = Array.from(reconciledIds).map((id) => ({
+        id,
+        updatedAt: Date.now(),
+      }));
+      if (recordsToStore.length > 0) {
+        await database.favorites.bulkPut(recordsToStore);
       }
     }
 
-    if (missingInRemote.length > 0) {
-      await client.from(SUPABASE_TABLE).upsert(missingInRemote, {
-        onConflict: "user_id,recipe_id",
-      });
-    }
+    // 4. Update localStorage backup
+    localStorage.setItem(
+      "diffuser_saved_ids",
+      JSON.stringify(Array.from(reconciledIds)),
+    );
 
-    // Pull remote favorites into Dexie
-    let hasNewFromRemote = false;
-    for (const id of remoteIds) {
-      if (!mergedIds.has(id)) {
-        mergedIds.add(id);
-        hasNewFromRemote = true;
-        if (database) {
-          await database.favorites.put({ id, updatedAt: Date.now() });
-        }
-      }
-    }
+    // 5. Always notify caller to update UI if state differed
+    const setsAreEqual =
+      currentLocalIds.size === reconciledIds.size &&
+      Array.from(currentLocalIds).every((id) => reconciledIds.has(id));
 
-    localStorage.setItem("diffuser_saved_ids", JSON.stringify(Array.from(mergedIds)));
-
-    if (hasNewFromRemote && typeof onReconciled === "function") {
-      onReconciled(mergedIds);
+    if (!setsAreEqual && typeof onReconciled === "function") {
+      onReconciled(reconciledIds);
     }
   } catch (err) {
-    console.warn("Supabase is unreachable or sync failed; Dexie data preserved:", err);
+    console.warn("Supabase sync failed; local favorites preserved:", err);
   } finally {
     isSyncing = false;
   }
-}
-
-let syncTimeout = null;
-export function triggerBackgroundSync() {
-  clearTimeout(syncTimeout);
-  syncTimeout = setTimeout(async () => {
-    if (currentUser && navigator.onLine) {
-      const database = initLocalDb();
-      if (!database) return;
-      const records = await database.favorites.toArray();
-      const ids = new Set(records.map((r) => String(r.id)));
-      await syncFavorites(ids);
-    }
-  }, 300);
 }
