@@ -5,6 +5,9 @@ import {
   setSearchQuery,
   setViewMode,
   clearAllFilters,
+  initSavedFavorites,
+  updateSavedIdsFromSync,
+  state,
 } from "./state.js";
 import {
   elements,
@@ -15,8 +18,15 @@ import {
   handleFavoriteToggle,
   navigateModal,
   shareCurrentRecipe,
-  exportFavoritesAsHtml,
+  setupAuthEvents,
+  updateAuthModalView,
 } from "./ui.js";
+import {
+  getSupabase,
+  onAuthChange,
+  syncFavorites,
+  flushQueue,
+} from "./sync.js";
 
 function setupEventListeners() {
   elements.searchInput?.addEventListener("input", (e) => {
@@ -52,19 +62,16 @@ function setupEventListeners() {
   });
 
   elements.tabAll?.addEventListener("click", () => {
-    elements.tabAll.classList.add("active");
-    elements.tabSaved?.classList.remove("active");
     setViewMode("all");
     renderAll();
   });
 
   elements.tabSaved?.addEventListener("click", () => {
-    elements.tabSaved.classList.add("active");
-    elements.tabAll?.classList.remove("active");
     setViewMode("saved");
     renderAll();
   });
 
+  // Modal navigation & interactions
   elements.closeModal?.addEventListener("click", closeModal);
 
   elements.modal?.addEventListener("click", (e) => {
@@ -81,32 +88,6 @@ function setupEventListeners() {
     if (!recipe) return;
     handleFavoriteToggle(recipe.id);
   });
-
-  window.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && elements.modal?.open) {
-      closeModal();
-    }
-  });
-
-  // Modal navigation arrows
-  elements.modalPrevBtn?.addEventListener("click", () => navigateModal(-1));
-  elements.modalNextBtn?.addEventListener("click", () => navigateModal(1));
-
-  // Keyboard navigation
-  window.addEventListener("keydown", (e) => {
-    if (!elements.modal?.open) return;
-
-    if (e.key === "Escape") {
-      closeModal();
-    } else if (e.key === "ArrowLeft") {
-      navigateModal(-1);
-    } else if (e.key === "ArrowRight") {
-      navigateModal(1);
-    }
-  });
-
-  // Export Favorites button
-  elements.exportBtn?.addEventListener("click", exportFavoritesAsHtml);
 
   elements.modalPrevBtn?.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -118,25 +99,7 @@ function setupEventListeners() {
     navigateModal(1);
   });
 
-  // Modal navigation & sharing
   elements.modalShareBtn?.addEventListener("click", shareCurrentRecipe);
-
-  elements.closeModal?.addEventListener("click", closeModal);
-
-  elements.modal?.addEventListener("click", (e) => {
-    if (
-      e.target === elements.modal ||
-      e.target.classList.contains("modal-wrapper")
-    ) {
-      closeModal();
-    }
-  });
-
-  elements.modalFavBtn?.addEventListener("click", () => {
-    const recipe = getActiveModalRecipe();
-    if (!recipe) return;
-    handleFavoriteToggle(recipe.id);
-  });
 
   window.addEventListener("keydown", (e) => {
     if (!elements.modal?.open) return;
@@ -149,6 +112,17 @@ function setupEventListeners() {
       navigateModal(1);
     }
   });
+
+  // Auto-sync when connection is restored
+  window.addEventListener("online", async () => {
+    await flushQueue();
+    await syncFavorites(state.savedIds, (reconciled) => {
+      updateSavedIdsFromSync(reconciled);
+      renderAll();
+    });
+  });
+
+  setupAuthEvents();
 }
 
 async function init() {
@@ -160,6 +134,10 @@ async function init() {
       elements.resultCount.textContent = "Loading blend collection...";
     }
 
+    // 1. Initialize Dexie storage and load offline favorites
+    await initSavedFavorites();
+
+    // 2. Fetch recipes collection
     const response = await fetch("./recipes.json");
     if (!response.ok) {
       throw new Error(`HTTP Error: ${response.status}`);
@@ -170,6 +148,26 @@ async function init() {
 
     renderOilOptions();
     renderAll();
+
+    // 3. Connect Supabase & sync if user session exists
+    await getSupabase();
+    updateAuthModalView();
+
+    onAuthChange(async (user) => {
+      updateAuthModalView();
+      if (user) {
+        await syncFavorites(state.savedIds, (reconciled) => {
+          updateSavedIdsFromSync(reconciled);
+          renderAll();
+        });
+      }
+    });
+
+    // Run initial sync if already signed in
+    await syncFavorites(state.savedIds, (reconciled) => {
+      updateSavedIdsFromSync(reconciled);
+      renderAll();
+    });
   } catch (error) {
     console.error("Initialization error:", error);
     if (elements.resultCount) {

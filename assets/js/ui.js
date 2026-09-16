@@ -5,7 +5,14 @@ import {
   isRecipeSaved,
   setPage,
   getCurrentPageRecipes,
+  updateSavedIdsFromSync,
 } from "./state.js";
+import {
+  signInWithEmail,
+  signOutUser,
+  getCurrentUser,
+  syncFavorites,
+} from "./sync.js";
 
 export const elements = {
   grid: document.getElementById("recipe-grid"),
@@ -20,7 +27,7 @@ export const elements = {
   tabAll: document.getElementById("tab-all"),
   tabSaved: document.getElementById("tab-saved"),
   themeToggle: document.getElementById("theme-toggle"),
-  exportBtn: document.getElementById("export-btn"),
+  authBtn: document.getElementById("auth-btn"),
   modal: document.getElementById("recipe-modal"),
   modalImg: document.getElementById("modal-img"),
   modalTitle: document.getElementById("modal-title"),
@@ -29,6 +36,20 @@ export const elements = {
   modalPrevBtn: document.getElementById("modal-prev-btn"),
   modalNextBtn: document.getElementById("modal-next-btn"),
   closeModal: document.getElementById("close-modal"),
+  // Auth dialog elements
+  authModal: document.getElementById("auth-modal"),
+  closeAuthModal: document.getElementById("close-auth-modal"),
+  authForm: document.getElementById("auth-form"),
+  authEmail: document.getElementById("auth-email"),
+  authPassword: document.getElementById("auth-password"),
+  authError: document.getElementById("auth-error"),
+  authSuccess: document.getElementById("auth-success"),
+  authSubmitBtn: document.getElementById("auth-submit-btn"),
+  authUserPanel: document.getElementById("auth-user-panel"),
+  authUserEmail: document.getElementById("auth-user-email"),
+  authSyncStatus: document.getElementById("auth-sync-status"),
+  authSyncNowBtn: document.getElementById("auth-sync-now-btn"),
+  authSignoutBtn: document.getElementById("auth-signout-btn"),
 };
 
 const HEART_ICON_SVG = `
@@ -69,8 +90,8 @@ function applyFavoriteVisuals(btnEl, isSaved) {
   if (!btnEl) return;
   btnEl.classList.toggle("is-saved", isSaved);
   btnEl.innerHTML = isSaved ? TRASH_ICON_SVG : HEART_ICON_SVG;
-  btnEl.title = isSaved ? "Remove" : "Save";
-  btnEl.setAttribute("aria-label", isSaved ? "Remove" : "Save");
+  btnEl.title = isSaved ? "Remove from favorites" : "Add to favorites";
+  btnEl.setAttribute("aria-label", isSaved ? "Remove from favorites" : "Add to favorites");
 }
 
 export function updateModalFavButton(recipeId) {
@@ -91,7 +112,7 @@ export function handleFavoriteToggle(recipeId, triggeredButton = null) {
       } else {
         const nextIndex = Math.min(
           Math.max(0, currentModalIndex),
-          collection.length - 1
+          collection.length - 1,
         );
         updateModalContent(collection[nextIndex], collection, nextIndex);
       }
@@ -103,7 +124,7 @@ export function handleFavoriteToggle(recipeId, triggeredButton = null) {
     applyFavoriteVisuals(triggeredButton, isNowSaved);
   } else {
     const cardBtn = elements.grid?.querySelector(
-      `.card-action-btn[data-id="${recipeId}"]`
+      `.card-action-btn[data-id="${recipeId}"]`,
     );
     if (cardBtn) applyFavoriteVisuals(cardBtn, isNowSaved);
   }
@@ -116,7 +137,7 @@ export function handleFavoriteToggle(recipeId, triggeredButton = null) {
 function updateModalContent(
   recipe,
   collection = state.filteredRecipes,
-  index = -1
+  index = -1,
 ) {
   activeModalRecipe = recipe;
   currentModalIndex =
@@ -150,32 +171,29 @@ export function openModal(recipe) {
   elements.modal?.showModal();
 }
 
-/**
- * Closes modal and navigates to the page where the recipe belongs,
- * scrolling directly to the item so the user doesn't have to scroll again.
- */
 export function closeModal() {
   const lastRecipe = activeModalRecipe;
-
   elements.modal?.close();
   activeModalRecipe = null;
   currentModalIndex = -1;
 
   if (!lastRecipe) return;
 
-  const itemIndex = state.filteredRecipes.findIndex((r) => r.id === lastRecipe.id);
+  const itemIndex = state.filteredRecipes.findIndex(
+    (r) => r.id === lastRecipe.id,
+  );
   if (itemIndex === -1) return;
 
   const targetPage = Math.floor(itemIndex / state.itemsPerPage) + 1;
-
   if (targetPage !== state.currentPage) {
     setPage(targetPage);
     renderAll();
   }
 
-  // Smoothly center the card in viewport
   requestAnimationFrame(() => {
-    const cardEl = elements.grid?.querySelector(`.card[data-id="${lastRecipe.id}"]`);
+    const cardEl = elements.grid?.querySelector(
+      `.card[data-id="${lastRecipe.id}"]`,
+    );
     if (cardEl) {
       cardEl.scrollIntoView({ behavior: "smooth", block: "center" });
       cardEl.classList.add("card-highlight");
@@ -188,9 +206,6 @@ export function getActiveModalRecipe() {
   return activeModalRecipe;
 }
 
-/**
- * Navigates across the ENTIRE collection of search/filter results
- */
 export function navigateModal(direction) {
   const collection = state.filteredRecipes;
   if (collection.length === 0) return;
@@ -228,7 +243,9 @@ export async function shareCurrentRecipe() {
   }
 
   try {
-    await navigator.clipboard.writeText(`${shareText}\n${window.location.href}`);
+    await navigator.clipboard.writeText(
+      `${shareText}\n${window.location.href}`,
+    );
     if (elements.modalShareBtn) {
       elements.modalShareBtn.innerHTML = CHECK_ICON_SVG;
       elements.modalShareBtn.title = "Copied to clipboard!";
@@ -242,151 +259,112 @@ export async function shareCurrentRecipe() {
   }
 }
 
-/**
- * Exports favorites with images linked via absolute URLs & clickable anchors
- */
-export function exportFavoritesAsHtml() {
-  const savedRecipes = state.recipes.filter((r) => state.savedIds.has(r.id));
+// ============================================================
+// AUTH & SYNC UI MODAL
+// ============================================================
+export function openAuthModal() {
+  updateAuthModalView();
+  elements.authModal?.showModal();
+}
 
-  if (savedRecipes.length === 0) {
-    alert("You haven't saved any favorites yet. Save some blends first to export them!");
-    return;
+export function closeAuthModal() {
+  elements.authModal?.close();
+}
+
+export function updateAuthModalView() {
+  const user = getCurrentUser();
+  if (elements.authBtn) {
+    elements.authBtn.classList.toggle("is-authenticated", Boolean(user));
   }
 
-  const recipeCardsHtml = savedRecipes
-    .map((r) => {
-      // Resolve absolute URL so images load regardless of where the HTML file is saved
-      const absoluteImgUrl = new URL(`images/${r.id}.webp`, window.location.href).href;
-
-      const ingredientList = (r.value || r.ingredients.join(", "))
-        .split(",")
-        .map((item) => `<li>${item.trim()}</li>`)
-        .join("");
-
-      return `
-      <article class="card">
-        <div class="card-img-wrap">
-          <a href="${absoluteImgUrl}" target="_blank" rel="noopener noreferrer" title="View full image">
-            <img src="${absoluteImgUrl}" alt="${r.name}" loading="lazy" onerror="this.parentElement.style.display='none'">
-          </a>
-        </div>
-        <div class="card-body">
-          <h2>${r.name}</h2>
-          <ul class="ingredients">
-            ${ingredientList}
-          </ul>
-        </div>
-      </article>
-      `;
-    })
-    .join("\n");
-
-  const fullHtml = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Favorite Diffuser Blends</title>
-  <style>
-    :root {
-      --primary: #235c43;
-      --bg: #f8faf9;
-      --card-bg: #ffffff;
-      --text: #111815;
-      --text-muted: #566760;
-      --border: rgba(0,0,0,0.1);
+  if (user) {
+    if (elements.authForm) elements.authForm.hidden = true;
+    if (elements.authUserPanel) elements.authUserPanel.hidden = false;
+    if (elements.authUserEmail) elements.authUserEmail.textContent = user.email;
+    if (elements.authSyncStatus) {
+      elements.authSyncStatus.textContent = "Favorites are synced with cloud.";
     }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #0b0f0d;
-        --card-bg: #121815;
-        --text: #f2f5f3;
-        --text-muted: #90a198;
-        --border: rgba(255,255,255,0.1);
+  } else {
+    if (elements.authForm) elements.authForm.hidden = false;
+    if (elements.authUserPanel) elements.authUserPanel.hidden = true;
+    if (elements.authError) elements.authError.hidden = true;
+    if (elements.authSuccess) elements.authSuccess.hidden = true;
+  }
+}
+
+export function setupAuthEvents() {
+  elements.authBtn?.addEventListener("click", openAuthModal);
+  elements.closeAuthModal?.addEventListener("click", closeAuthModal);
+
+  elements.authModal?.addEventListener("click", (e) => {
+    if (
+      e.target === elements.authModal ||
+      e.target.classList.contains("modal-wrapper")
+    ) {
+      closeAuthModal();
+    }
+  });
+
+  elements.authForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const email = elements.authEmail?.value.trim();
+    const password = elements.authPassword?.value;
+
+    if (!email || !password) return;
+
+    if (elements.authError) elements.authError.hidden = true;
+    if (elements.authSubmitBtn) {
+      elements.authSubmitBtn.disabled = true;
+      elements.authSubmitBtn.textContent = "Signing In...";
+    }
+
+    try {
+      await signInWithEmail(email, password);
+      if (elements.authPassword) elements.authPassword.value = "";
+      updateAuthModalView();
+      // Synchronize immediately on login
+      await syncFavorites(state.savedIds, (reconciled) => {
+        updateSavedIdsFromSync(reconciled);
+        renderAll();
+      });
+      closeAuthModal();
+    } catch (err) {
+      if (elements.authError) {
+        elements.authError.textContent =
+          err.message || "Failed to sign in. Please verify your credentials.";
+        elements.authError.hidden = false;
+      }
+    } finally {
+      if (elements.authSubmitBtn) {
+        elements.authSubmitBtn.disabled = false;
+        elements.authSubmitBtn.textContent = "Sign In";
       }
     }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      margin: 0;
-      padding: 2rem 1.5rem;
-    }
-    .header {
-      max-width: 960px;
-      margin: 0 auto 2rem;
-      border-bottom: 2px solid var(--border);
-      padding-bottom: 1rem;
-    }
-    h1 { margin: 0 0 0.25rem; color: var(--primary); }
-    .subtitle { color: var(--text-muted); font-size: 0.9rem; }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 1.5rem;
-      max-width: 960px;
-      margin: 0 auto;
-    }
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-      break-inside: avoid;
-    }
-    .card-img-wrap {
-      width: 100%;
-      aspect-ratio: 1/1;
-      background: rgba(0,0,0,0.05);
-    }
-    .card-img-wrap a {
-      display: block;
-      width: 100%;
-      height: 100%;
-    }
-    .card-img-wrap img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
-      transition: transform 0.2s ease;
-    }
-    .card-img-wrap a:hover img {
-      transform: scale(1.02);
-    }
-    .card-body { padding: 1.2rem; }
-    .card-body h2 { font-size: 1.15rem; margin: 0 0 0.75rem; }
-    .ingredients { margin: 0; padding-left: 1.25rem; color: var(--text-muted); line-height: 1.5; }
-    @media print {
-      body { background: #ffffff; color: #000000; padding: 0; }
-      .grid { grid-template-columns: repeat(2, 1fr); gap: 1rem; }
-      .card { box-shadow: none; border: 1px solid #ccc; }
-    }
-  </style>
-</head>
-<body>
-  <header class="header">
-    <h1>My Favorite Diffuser Blends</h1>
-    <p class="subtitle">Exported on ${new Date().toLocaleDateString()} &bull; ${savedRecipes.length} Blend${savedRecipes.length === 1 ? "" : "s"}</p>
-  </header>
-  <main class="grid">
-    ${recipeCardsHtml}
-  </main>
-</body>
-</html>`;
+  });
 
-  const blob = new Blob([fullHtml], { type: "text/html;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `diffuser-favorites-${new Date().toISOString().slice(0, 10)}.html`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  elements.authSignoutBtn?.addEventListener("click", async () => {
+    await signOutUser();
+    updateAuthModalView();
+  });
+
+  elements.authSyncNowBtn?.addEventListener("click", async () => {
+    if (elements.authSyncNowBtn) {
+      elements.authSyncNowBtn.disabled = true;
+      elements.authSyncNowBtn.textContent = "Syncing...";
+    }
+    await syncFavorites(state.savedIds, (reconciled) => {
+      updateSavedIdsFromSync(reconciled);
+      renderAll();
+    });
+    if (elements.authSyncNowBtn) {
+      elements.authSyncNowBtn.disabled = false;
+      elements.authSyncNowBtn.textContent = "Synced!";
+      setTimeout(() => {
+        if (elements.authSyncNowBtn)
+          elements.authSyncNowBtn.textContent = "Sync Now";
+      }, 1500);
+    }
+  });
 }
 
 export function renderOilOptions() {
@@ -416,7 +394,8 @@ export function renderActiveFilters() {
     return;
   }
 
-  const hasFilters = state.selectedOils.length > 0 || Boolean(state.searchQuery);
+  const hasFilters =
+    state.selectedOils.length > 0 || Boolean(state.searchQuery);
   if (elements.clearFiltersBtn) elements.clearFiltersBtn.hidden = !hasFilters;
 
   state.selectedOils.forEach((name) => {
@@ -448,9 +427,13 @@ export function renderGrid() {
 
   if (elements.resultCount) {
     if (state.viewMode === "saved") {
-      elements.resultCount.textContent = `${total} saved blend${total === 1 ? "" : "s"}`;
+      elements.resultCount.textContent = `${total} favorite blend${
+        total === 1 ? "" : "s"
+      }`;
     } else {
-      elements.resultCount.textContent = `${total.toLocaleString()} blend${total === 1 ? "" : "s"} found`;
+      elements.resultCount.textContent = `${total.toLocaleString()} blend${
+        total === 1 ? "" : "s"
+      } found`;
     }
   }
 
@@ -459,7 +442,7 @@ export function renderGrid() {
     elements.grid.innerHTML = `
       <div class="empty-state">
         <span class="empty-icon">${isSavedTab ? "🤍" : "🌿"}</span>
-        <h3 class="empty-title">${isSavedTab ? "No saved blends yet" : "No blends found"}</h3>
+        <h3 class="empty-title">${isSavedTab ? "No favorite blends yet" : "No blends found"}</h3>
         <p class="empty-desc">
           ${
             isSavedTab
@@ -479,7 +462,7 @@ export function renderGrid() {
 
     const card = document.createElement("article");
     card.className = "card";
-    card.setAttribute("data-id", recipe.id); // Used for smooth-scroll on modal close
+    card.setAttribute("data-id", recipe.id);
     card.style.animationDelay = `${index * 25}ms`;
     card.title = recipe.name;
 
@@ -518,7 +501,7 @@ export function renderPagination() {
   if (!elements.pagination) return;
   elements.pagination.innerHTML = "";
   const totalPages = Math.ceil(
-    state.filteredRecipes.length / state.itemsPerPage
+    state.filteredRecipes.length / state.itemsPerPage,
   );
 
   if (totalPages <= 1) {
@@ -563,7 +546,7 @@ export function renderPagination() {
   pageInput.title = "Jump to page";
   pageInput.setAttribute(
     "aria-label",
-    `Current page ${state.currentPage} of ${totalPages}`
+    `Current page ${state.currentPage} of ${totalPages}`,
   );
 
   pageInput.onchange = () => {
@@ -597,7 +580,14 @@ export function renderPagination() {
   elements.pagination.append(firstBtn, prevBtn, indicator, nextBtn, lastBtn);
 }
 
+export function renderTabs() {
+  const isSaved = state.viewMode === "saved";
+  if (elements.tabSaved) elements.tabSaved.classList.toggle("active", isSaved);
+  if (elements.tabAll) elements.tabAll.classList.toggle("active", !isSaved);
+}
+
 export function renderAll() {
+  renderTabs();
   renderActiveFilters();
   renderSavedCounter();
   renderGrid();

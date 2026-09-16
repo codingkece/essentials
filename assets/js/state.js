@@ -1,26 +1,65 @@
 import { initSearchIndex, searchByName } from "./search.js";
+import {
+  loadSavedIdsFromLocal,
+  persistFavoriteLocal,
+} from "./sync.js";
 
 const SAVED_OILS_KEY = "diffuser_selected_oils";
 const SAVED_RECIPES_KEY = "diffuser_saved_ids";
+const VIEW_MODE_KEY = "diffuser_view_mode";
+
+function getInitialViewMode() {
+  const savedMode = localStorage.getItem(VIEW_MODE_KEY);
+  if (savedMode === "saved" || savedMode === "all") {
+    return savedMode;
+  }
+  if (window.location.hash === "#favorites" || window.location.hash === "#saved") {
+    return "saved";
+  }
+  return "all";
+}
 
 export const state = {
   recipes: [],
   oils: [],
   selectedOils: JSON.parse(localStorage.getItem(SAVED_OILS_KEY) || "[]"),
   savedIds: new Set(JSON.parse(localStorage.getItem(SAVED_RECIPES_KEY) || "[]")),
-  viewMode: "all",
+  viewMode: getInitialViewMode(),
   searchQuery: "",
   currentPage: 1,
   itemsPerPage: 10,
   filteredRecipes: [],
 };
 
+export async function initSavedFavorites() {
+  try {
+    const ids = await loadSavedIdsFromLocal();
+    state.savedIds = ids;
+    if (state.viewMode === "saved") {
+      filterRecipes();
+    }
+  } catch (e) {
+    console.warn("Failed to initialize favorites from Dexie:", e);
+  }
+}
+
+export function updateSavedIdsFromSync(newIdSet) {
+  state.savedIds = newIdSet;
+  persistSavedRecipes();
+  if (state.viewMode === "saved") {
+    filterRecipes();
+  }
+}
+
 function persistSelectedOils() {
   localStorage.setItem(SAVED_OILS_KEY, JSON.stringify(state.selectedOils));
 }
 
 function persistSavedRecipes() {
-  localStorage.setItem(SAVED_RECIPES_KEY, JSON.stringify(Array.from(state.savedIds)));
+  localStorage.setItem(
+    SAVED_RECIPES_KEY,
+    JSON.stringify(Array.from(state.savedIds)),
+  );
 }
 
 export function extractIngredients(valueString) {
@@ -44,6 +83,7 @@ export function setData(rawRecipes) {
       id: String(r.id),
       name: r.name || r.title || "Unnamed Blend",
       ingredients,
+      value: r.value || "",
     };
   });
 
@@ -61,6 +101,7 @@ export function setSearchQuery(query) {
 export function setViewMode(mode) {
   if (mode === state.viewMode) return;
   state.viewMode = mode;
+  localStorage.setItem(VIEW_MODE_KEY, mode);
   state.currentPage = 1;
   filterRecipes();
 }
@@ -76,6 +117,7 @@ export function toggleFavorite(recipeId) {
   }
 
   persistSavedRecipes();
+  persistFavoriteLocal(idStr, !isSaved);
 
   if (state.viewMode === "saved") {
     filterRecipes();
@@ -116,10 +158,8 @@ export function filterRecipes() {
   let pool;
 
   if (state.viewMode === "saved") {
-    // 1. In Saved/Favorites view, show ALL saved blends regardless of oil filters
     pool = state.recipes.filter((recipe) => state.savedIds.has(recipe.id));
 
-    // Allow searching by blend name within favorites if typed
     if (state.searchQuery && state.searchQuery.trim()) {
       const nameSearchResults = searchByName(state.searchQuery);
       if (nameSearchResults !== null) {
@@ -128,20 +168,22 @@ export function filterRecipes() {
       }
     }
   } else {
-    // 2. In "All Blends" view, apply both name search and oil filters
     const nameSearchResults = searchByName(state.searchQuery);
     pool = nameSearchResults !== null ? nameSearchResults : state.recipes;
 
     if (state.selectedOils.length > 0) {
       pool = pool.filter((recipe) =>
-        state.selectedOils.every((oil) => recipe.ingredients.includes(oil))
+        state.selectedOils.every((oil) => recipe.ingredients.includes(oil)),
       );
     }
   }
 
   state.filteredRecipes = pool;
 
-  const totalPages = Math.max(1, Math.ceil(state.filteredRecipes.length / state.itemsPerPage));
+  const totalPages = Math.max(
+    1,
+    Math.ceil(state.filteredRecipes.length / state.itemsPerPage),
+  );
   if (state.currentPage > totalPages) {
     state.currentPage = 1;
   }
