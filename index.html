@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Discover curated essential oil diffuser recipes. Search by blend name, filter by ingredients, and save your favorites."
+      content="Discover curated essential oil diffuser recipes. Filter by ingredients, and save your favorites."
     />
     <title>Diffuser Blends</title>
     <script>
@@ -35,7 +35,7 @@
         <div class="header-brand">
           <span class="brand-icon" aria-hidden="true">🌸</span>
           <div>
-            <h1>&nbsp;</h1>
+            <h1>Diffuser Blends</h1>
           </div>
         </div>
 
@@ -107,51 +107,66 @@
         </div>
       </div>
 
-      <!-- Search & Filter Toolbar -->
+      <!-- Essential Oil Search & Filter Toolbar -->
       <div class="toolbar">
-        <div class="search-wrapper">
-          <svg
-            class="search-icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            aria-hidden="true"
-          >
-            <circle cx="11" cy="11" r="8"></circle>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-          </svg>
-          <input
-            type="search"
-            id="search-input"
-            class="search-input"
-            placeholder="Search ..."
-            autocomplete="off"
-            spellcheck="false"
-          />
-          <button
-            id="clear-search-btn"
-            class="clear-search-btn"
-            type="button"
-            aria-label="Clear search text"
+        <div class="oil-combobox" id="oil-combobox">
+          <div class="combobox-input-wrapper">
+            <svg
+              class="combobox-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
+            </svg>
+            <input
+              type="search"
+              id="oil-search-input"
+              class="combobox-input"
+              placeholder="Search or select essential oils..."
+              autocomplete="off"
+              spellcheck="false"
+              role="combobox"
+              aria-expanded="false"
+              aria-autocomplete="list"
+              aria-controls="oil-options-list"
+            />
+            <button
+              id="clear-oil-input-btn"
+              class="clear-combobox-btn"
+              type="button"
+              aria-label="Clear search input"
+              hidden
+            >
+              &times;
+            </button>
+            <button
+              id="toggle-oil-dropdown-btn"
+              class="combobox-chevron-btn"
+              type="button"
+              aria-label="Toggle oils menu"
+              tabindex="-1"
+            >
+              <svg class="chevron-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 10l5 5 5-5z" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Searchable Dropdown Popup -->
+          <div
+            id="oil-dropdown"
+            class="combobox-dropdown"
+            role="listbox"
+            aria-label="Essential oils"
             hidden
           >
-            &times;
-          </button>
-        </div>
-
-        <div class="select-wrapper">
-          <label for="oil-select" class="sr-only"
-            >Filter by Essential Oil</label
-          >
-          <select id="oil-select">
-            <option value="" disabled selected>
-              Filter by essential oil...
-            </option>
-          </select>
-          <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M7 10l5 5 5-5z" />
-          </svg>
+            <div id="oil-options-list" class="combobox-options-list"></div>
+          </div>
         </div>
 
         <button id="clear-filters-btn" class="clear-btn" type="button" hidden>
@@ -194,7 +209,6 @@
             <h2 id="modal-title" class="modal-title">Blend Name</h2>
 
             <div class="modal-actions">
-              <!-- Previous Arrow -->
               <button
                 id="modal-prev-btn"
                 class="modal-icon-action-btn"
@@ -215,7 +229,6 @@
                 </svg>
               </button>
 
-              <!-- Next Arrow -->
               <button
                 id="modal-next-btn"
                 class="modal-icon-action-btn"
@@ -236,7 +249,6 @@
                 </svg>
               </button>
 
-              <!-- Share Button -->
               <button
                 id="modal-share-btn"
                 class="modal-icon-action-btn"
@@ -261,7 +273,6 @@
                 </svg>
               </button>
 
-              <!-- Favorite Button -->
               <button
                 id="modal-fav-btn"
                 class="modal-icon-action-btn"
@@ -286,7 +297,6 @@
           <h2 class="auth-heading">Cloud Sync</h2>
           <p class="auth-subheading">Sync your favorites securely with Supabase.</p>
 
-          <!-- Logged Out View -->
           <form id="auth-form" class="auth-form">
             <div class="auth-field">
               <label for="auth-email">Email</label>
@@ -301,7 +311,6 @@
             <button type="submit" id="auth-submit-btn" class="auth-btn-primary">Sign In</button>
           </form>
 
-          <!-- Logged In View -->
           <div id="auth-user-panel" class="auth-user-panel" hidden>
             <div class="auth-user-info">
               <span class="auth-badge-active">● Connected</span>

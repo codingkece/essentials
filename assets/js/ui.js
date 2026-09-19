@@ -15,10 +15,8 @@ import {
 } from "./sync.js";
 
 export const elements = {
+  toolbar: document.querySelector(".toolbar"),
   grid: document.getElementById("recipe-grid"),
-  searchInput: document.getElementById("search-input"),
-  clearSearchBtn: document.getElementById("clear-search-btn"),
-  oilSelect: document.getElementById("oil-select"),
   filterContainer: document.getElementById("active-filters"),
   pagination: document.getElementById("pagination"),
   resultCount: document.getElementById("result-count"),
@@ -36,6 +34,13 @@ export const elements = {
   modalPrevBtn: document.getElementById("modal-prev-btn"),
   modalNextBtn: document.getElementById("modal-next-btn"),
   closeModal: document.getElementById("close-modal"),
+  // Searchable Oil Combobox Elements
+  oilCombobox: document.getElementById("oil-combobox"),
+  oilSearchInput: document.getElementById("oil-search-input"),
+  clearOilInputBtn: document.getElementById("clear-oil-input-btn"),
+  toggleOilDropdownBtn: document.getElementById("toggle-oil-dropdown-btn"),
+  oilDropdown: document.getElementById("oil-dropdown"),
+  oilOptionsList: document.getElementById("oil-options-list"),
   // Auth dialog elements
   authModal: document.getElementById("auth-modal"),
   closeAuthModal: document.getElementById("close-auth-modal"),
@@ -78,20 +83,218 @@ const SHARE_ICON_SVG = `
 `;
 
 const CHECK_ICON_SVG = `
-  <svg viewBox="0 0 24 24" fill="none" stroke="#235c43" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
     <polyline points="20 6 9 17 4 12"></polyline>
   </svg>
 `;
 
 let activeModalRecipe = null;
 let currentModalIndex = -1;
+let highlightedIndex = -1;
+let currentVisibleOils = [];
+
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function highlightMatch(text, query) {
+  const safeText = escapeHtml(text);
+  if (!query) return safeText;
+  const safeQuery = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const regex = new RegExp(`(${safeQuery})`, "gi");
+  return safeText.replace(regex, `<mark class="combobox-match">$1</mark>`);
+}
+
+// ============================================================
+// SEARCHABLE OIL COMBOBOX LOGIC
+// ============================================================
+export function openOilDropdown() {
+  if (!elements.oilDropdown) return;
+  elements.oilDropdown.hidden = false;
+  elements.oilCombobox?.classList.add("is-open");
+  elements.oilSearchInput?.setAttribute("aria-expanded", "true");
+  renderOilDropdownOptions();
+}
+
+export function closeOilDropdown() {
+  if (!elements.oilDropdown) return;
+  elements.oilDropdown.hidden = true;
+  elements.oilCombobox?.classList.remove("is-open");
+  elements.oilSearchInput?.setAttribute("aria-expanded", "false");
+  highlightedIndex = -1;
+}
+
+export function isOilDropdownOpen() {
+  return elements.oilDropdown && !elements.oilDropdown.hidden;
+}
+
+function selectOilFromCombobox(oil) {
+  const wasSelected = state.selectedOils.includes(oil);
+
+  toggleOil(oil);
+  renderAll();
+
+  // Only reset when the oil was *added* as a filter (not when deselected)
+  if (!wasSelected && elements.oilSearchInput) {
+    elements.oilSearchInput.value = "";
+    elements.oilSearchInput.focus();
+  }
+
+  renderOilDropdownOptions();
+  closeOilDropdown();
+}
+
+export function renderOilDropdownOptions() {
+  if (!elements.oilOptionsList) return;
+
+  const query = elements.oilSearchInput?.value.trim().toLowerCase() || "";
+  const filtered = state.oils.filter((oil) =>
+    oil.toLowerCase().includes(query),
+  );
+  currentVisibleOils = filtered;
+
+  if (elements.clearOilInputBtn) {
+    elements.clearOilInputBtn.hidden = !elements.oilSearchInput?.value;
+  }
+
+  if (filtered.length === 0) {
+    elements.oilOptionsList.innerHTML = `
+      <div class="combobox-empty">
+        <span>No essential oils match "${escapeHtml(query)}"</span>
+      </div>
+    `;
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+
+  filtered.forEach((oil, idx) => {
+    const isSelected = state.selectedOils.includes(oil);
+    const count = state.oilCounts[oil] || 0;
+
+    const item = document.createElement("div");
+    item.className = `combobox-option ${isSelected ? "is-selected" : ""} ${
+      idx === highlightedIndex ? "is-highlighted" : ""
+    }`;
+    item.setAttribute("role", "option");
+    item.setAttribute("aria-selected", isSelected ? "true" : "false");
+    item.setAttribute("data-index", idx);
+
+    item.innerHTML = `
+      <div class="combobox-option-left">
+        <span class="combobox-check" aria-hidden="true">${isSelected ? CHECK_ICON_SVG : ""}</span>
+        <span class="combobox-option-name">${highlightMatch(oil, query)}</span>
+      </div>
+      <span class="combobox-count-badge">${count}</span>
+    `;
+
+    item.addEventListener("pointerdown", (e) => {
+      e.preventDefault(); // Keep focus in input
+      selectOilFromCombobox(oil);
+    });
+
+    fragment.appendChild(item);
+  });
+
+  elements.oilOptionsList.innerHTML = "";
+  elements.oilOptionsList.appendChild(fragment);
+
+  if (highlightedIndex >= 0) {
+    const activeEl = elements.oilOptionsList.querySelector(
+      `.combobox-option[data-index="${highlightedIndex}"]`,
+    );
+    activeEl?.scrollIntoView({ block: "nearest" });
+  }
+}
+
+export function setupOilComboboxEvents() {
+  elements.oilSearchInput?.addEventListener("focus", () => {
+    openOilDropdown();
+  });
+
+  elements.oilSearchInput?.addEventListener("input", () => {
+    highlightedIndex = 0;
+    openOilDropdown();
+  });
+
+  elements.oilSearchInput?.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (!isOilDropdownOpen()) {
+        openOilDropdown();
+        return;
+      }
+      if (currentVisibleOils.length > 0) {
+        highlightedIndex = (highlightedIndex + 1) % currentVisibleOils.length;
+        renderOilDropdownOptions();
+      }
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (!isOilDropdownOpen()) {
+        openOilDropdown();
+        return;
+      }
+      if (currentVisibleOils.length > 0) {
+        highlightedIndex =
+          (highlightedIndex - 1 + currentVisibleOils.length) %
+          currentVisibleOils.length;
+        renderOilDropdownOptions();
+      }
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (
+        highlightedIndex >= 0 &&
+        highlightedIndex < currentVisibleOils.length
+      ) {
+        selectOilFromCombobox(currentVisibleOils[highlightedIndex]);
+      } else if (currentVisibleOils.length === 1) {
+        selectOilFromCombobox(currentVisibleOils[0]);
+      }
+    } else if (e.key === "Escape") {
+      closeOilDropdown();
+    }
+  });
+
+  elements.clearOilInputBtn?.addEventListener("click", () => {
+    if (elements.oilSearchInput) {
+      elements.oilSearchInput.value = "";
+      elements.oilSearchInput.focus();
+    }
+    highlightedIndex = -1;
+    renderOilDropdownOptions();
+  });
+
+  elements.toggleOilDropdownBtn?.addEventListener("click", () => {
+    if (isOilDropdownOpen()) {
+      closeOilDropdown();
+    } else {
+      elements.oilSearchInput?.focus();
+      openOilDropdown();
+    }
+  });
+
+  document.addEventListener("pointerdown", (e) => {
+    if (!elements.oilCombobox?.contains(e.target)) {
+      closeOilDropdown();
+    }
+  });
+}
 
 function applyFavoriteVisuals(btnEl, isSaved) {
   if (!btnEl) return;
   btnEl.classList.toggle("is-saved", isSaved);
   btnEl.innerHTML = isSaved ? TRASH_ICON_SVG : HEART_ICON_SVG;
   btnEl.title = isSaved ? "Remove from favorites" : "Add to favorites";
-  btnEl.setAttribute("aria-label", isSaved ? "Remove from favorites" : "Add to favorites");
+  btnEl.setAttribute(
+    "aria-label",
+    isSaved ? "Remove from favorites" : "Add to favorites",
+  );
 }
 
 export function updateModalFavButton(recipeId) {
@@ -322,7 +525,6 @@ export function setupAuthEvents() {
       await signInWithEmail(email, password);
       if (elements.authPassword) elements.authPassword.value = "";
       updateAuthModalView();
-      // Synchronize immediately on login
       await syncFavorites(state.savedIds, (reconciled) => {
         updateSavedIdsFromSync(reconciled);
         renderAll();
@@ -368,19 +570,7 @@ export function setupAuthEvents() {
 }
 
 export function renderOilOptions() {
-  if (!elements.oilSelect) return;
-  const fragment = document.createDocumentFragment();
-
-  state.oils.forEach((oil) => {
-    const option = document.createElement("option");
-    option.value = oil;
-    option.textContent = oil;
-    fragment.appendChild(option);
-  });
-
-  elements.oilSelect.innerHTML =
-    '<option value="" disabled selected>Filter by essential oil...</option>';
-  elements.oilSelect.appendChild(fragment);
+  renderOilDropdownOptions();
 }
 
 export function renderActiveFilters() {
@@ -388,22 +578,19 @@ export function renderActiveFilters() {
   elements.filterContainer.innerHTML = "";
 
   if (state.viewMode === "saved") {
-    if (elements.clearFiltersBtn) {
-      elements.clearFiltersBtn.hidden = !state.searchQuery;
-    }
+    if (elements.clearFiltersBtn) elements.clearFiltersBtn.hidden = true;
     return;
   }
 
-  const hasFilters =
-    state.selectedOils.length > 0 || Boolean(state.searchQuery);
+  const hasFilters = state.selectedOils.length > 0;
   if (elements.clearFiltersBtn) elements.clearFiltersBtn.hidden = !hasFilters;
 
   state.selectedOils.forEach((name) => {
     const chip = document.createElement("button");
     chip.className = "chip";
     chip.setAttribute("type", "button");
-    chip.setAttribute("aria-label", `Remove ${name} filter`);
-    chip.innerHTML = `${name} <span aria-hidden="true">&times;</span>`;
+    chip.setAttribute("aria-label", `Remove ${escapeHtml(name)} filter`);
+    chip.innerHTML = `${escapeHtml(name)} <span aria-hidden="true">&times;</span>`;
     chip.onclick = () => {
       toggleOil(name);
       renderAll();
@@ -447,7 +634,7 @@ export function renderGrid() {
           ${
             isSavedTab
               ? "Tap the heart icon on any recipe to save it to your library."
-              : "Try checking your spelling or clearing filters."
+              : "Try clearing or changing your selected oil filters."
           }
         </p>
       </div>
@@ -482,7 +669,7 @@ export function renderGrid() {
     cardWrapper.innerHTML = `
       <img 
         src="images/${recipe.id}.webp" 
-        alt="${recipe.name}" 
+        alt="${escapeHtml(recipe.name)}" 
         class="card-img" 
         loading="lazy" 
         decoding="async">
@@ -584,6 +771,17 @@ export function renderTabs() {
   const isSaved = state.viewMode === "saved";
   if (elements.tabSaved) elements.tabSaved.classList.toggle("active", isSaved);
   if (elements.tabAll) elements.tabAll.classList.toggle("active", !isSaved);
+
+  // Hide the oil filter toolbar and chips on the Favorites screen
+  if (elements.toolbar) {
+    elements.toolbar.hidden = isSaved;
+  }
+  if (elements.filterContainer) {
+    elements.filterContainer.hidden = isSaved;
+  }
+  if (isSaved) {
+    closeOilDropdown();
+  }
 }
 
 export function renderAll() {
@@ -592,4 +790,5 @@ export function renderAll() {
   renderSavedCounter();
   renderGrid();
   renderPagination();
+  renderOilDropdownOptions();
 }

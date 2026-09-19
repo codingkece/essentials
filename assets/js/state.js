@@ -1,8 +1,4 @@
-import { initSearchIndex, searchByName } from "./search.js";
-import {
-  loadSavedIdsFromLocal,
-  persistFavoriteLocal,
-} from "./sync.js";
+import { loadSavedIdsFromLocal, persistFavoriteLocal } from "./sync.js";
 
 const SAVED_OILS_KEY = "diffuser_selected_oils";
 const SAVED_RECIPES_KEY = "diffuser_saved_ids";
@@ -13,7 +9,10 @@ function getInitialViewMode() {
   if (savedMode === "saved" || savedMode === "all") {
     return savedMode;
   }
-  if (window.location.hash === "#favorites" || window.location.hash === "#saved") {
+  if (
+    window.location.hash === "#favorites" ||
+    window.location.hash === "#saved"
+  ) {
     return "saved";
   }
   return "all";
@@ -22,10 +21,12 @@ function getInitialViewMode() {
 export const state = {
   recipes: [],
   oils: [],
+  oilCounts: {},
   selectedOils: JSON.parse(localStorage.getItem(SAVED_OILS_KEY) || "[]"),
-  savedIds: new Set(JSON.parse(localStorage.getItem(SAVED_RECIPES_KEY) || "[]")),
+  savedIds: new Set(
+    JSON.parse(localStorage.getItem(SAVED_RECIPES_KEY) || "[]"),
+  ),
   viewMode: getInitialViewMode(),
-  searchQuery: "",
   currentPage: 1,
   itemsPerPage: 10,
   filteredRecipes: [],
@@ -74,10 +75,14 @@ export function setData(rawRecipes) {
   if (!Array.isArray(rawRecipes)) return;
 
   const oilSet = new Set();
+  const counts = {};
 
   state.recipes = rawRecipes.map((r) => {
     const ingredients = extractIngredients(r.value || "");
-    ingredients.forEach((oil) => oilSet.add(oil));
+    ingredients.forEach((oil) => {
+      oilSet.add(oil);
+      counts[oil] = (counts[oil] || 0) + 1;
+    });
 
     return {
       id: String(r.id),
@@ -87,14 +92,8 @@ export function setData(rawRecipes) {
     };
   });
 
-  state.oils = Array.from(oilSet).sort();
-  initSearchIndex(state.recipes);
-  filterRecipes();
-}
-
-export function setSearchQuery(query) {
-  state.searchQuery = query;
-  state.currentPage = 1;
+  state.oils = Array.from(oilSet).sort((a, b) => a.localeCompare(b));
+  state.oilCounts = counts;
   filterRecipes();
 }
 
@@ -144,7 +143,6 @@ export function toggleOil(oilName) {
 
 export function clearAllFilters() {
   state.selectedOils = [];
-  state.searchQuery = "";
   persistSelectedOils();
   state.currentPage = 1;
   filterRecipes();
@@ -158,19 +156,10 @@ export function filterRecipes() {
   let pool;
 
   if (state.viewMode === "saved") {
+    // Favorites screen shows all saved recipes without oil filtering
     pool = state.recipes.filter((recipe) => state.savedIds.has(recipe.id));
-
-    if (state.searchQuery && state.searchQuery.trim()) {
-      const nameSearchResults = searchByName(state.searchQuery);
-      if (nameSearchResults !== null) {
-        const searchIds = new Set(nameSearchResults.map((r) => r.id));
-        pool = pool.filter((recipe) => searchIds.has(recipe.id));
-      }
-    }
   } else {
-    const nameSearchResults = searchByName(state.searchQuery);
-    pool = nameSearchResults !== null ? nameSearchResults : state.recipes;
-
+    pool = state.recipes;
     if (state.selectedOils.length > 0) {
       pool = pool.filter((recipe) =>
         state.selectedOils.every((oil) => recipe.ingredients.includes(oil)),

@@ -1,8 +1,6 @@
 import { initTheme } from "./theme.js";
 import {
   setData,
-  toggleOil,
-  setSearchQuery,
   setViewMode,
   clearAllFilters,
   initSavedFavorites,
@@ -20,6 +18,7 @@ import {
   navigateModal,
   shareCurrentRecipe,
   setupAuthEvents,
+  setupOilComboboxEvents,
   updateAuthModalView,
 } from "./ui.js";
 import {
@@ -31,34 +30,11 @@ import {
 } from "./sync.js";
 
 function setupEventListeners() {
-  elements.searchInput?.addEventListener("input", (e) => {
-    const query = e.target.value;
-    if (elements.clearSearchBtn) elements.clearSearchBtn.hidden = !query;
-    setSearchQuery(query);
-    renderAll();
-  });
-
-  elements.clearSearchBtn?.addEventListener("click", () => {
-    if (elements.searchInput) {
-      elements.searchInput.value = "";
-      elements.searchInput.focus();
-    }
-    elements.clearSearchBtn.hidden = true;
-    setSearchQuery("");
-    renderAll();
-  });
-
-  elements.oilSelect?.addEventListener("change", (e) => {
-    if (e.target.value) {
-      toggleOil(e.target.value);
-      renderAll();
-      e.target.value = "";
-    }
-  });
+  setupOilComboboxEvents();
 
   elements.clearFiltersBtn?.addEventListener("click", () => {
-    if (elements.searchInput) elements.searchInput.value = "";
-    if (elements.clearSearchBtn) elements.clearSearchBtn.hidden = true;
+    if (elements.oilSearchInput) elements.oilSearchInput.value = "";
+    if (elements.clearOilInputBtn) elements.clearOilInputBtn.hidden = true;
     clearAllFilters();
     renderAll();
   });
