@@ -7,6 +7,8 @@
       name="description"
       content="Discover curated essential oil diffuser recipes. Filter by ingredients, and save your favorites."
     />
+    <meta name="robots" content="noindex, nofollow, noarchive, noimageindex" />
+    <meta name="googlebot" content="noindex, nofollow" />
     <title>Diffuser Blends</title>
     <script>
       (function () {
@@ -89,7 +91,13 @@
             class="theme-toggle"
             aria-label="Toggle theme"
           >
-            <svg class="sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg
+              class="sun-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
               <circle cx="12" cy="12" r="5"></circle>
               <line x1="12" y1="1" x2="12" y2="3"></line>
               <line x1="12" y1="21" x2="12" y2="23"></line>
@@ -100,7 +108,13 @@
               <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
               <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
             </svg>
-            <svg class="moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg
+              class="moon-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
               <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
             </svg>
           </button>
@@ -290,25 +304,47 @@
     <dialog id="auth-modal" class="modal">
       <div class="modal-wrapper">
         <div class="auth-card">
-          <button id="close-auth-modal" class="close-btn" aria-label="Close dialog">
+          <button
+            id="close-auth-modal"
+            class="close-btn"
+            aria-label="Close dialog"
+          >
             &times;
           </button>
-          
+
           <h2 class="auth-heading">Cloud Sync</h2>
-          <p class="auth-subheading">Sync your favorites securely with Supabase.</p>
+          <p class="auth-subheading">
+            Sync your favorites securely with Supabase.
+          </p>
 
           <form id="auth-form" class="auth-form">
             <div class="auth-field">
               <label for="auth-email">Email</label>
-              <input type="email" id="auth-email" class="auth-input" required autocomplete="email" placeholder="user@example.com" />
+              <input
+                type="email"
+                id="auth-email"
+                class="auth-input"
+                required
+                autocomplete="email"
+                placeholder="user@example.com"
+              />
             </div>
             <div class="auth-field">
               <label for="auth-password">Password</label>
-              <input type="password" id="auth-password" class="auth-input" required autocomplete="current-password" placeholder="••••••••" />
+              <input
+                type="password"
+                id="auth-password"
+                class="auth-input"
+                required
+                autocomplete="current-password"
+                placeholder="••••••••"
+              />
             </div>
             <div id="auth-error" class="auth-msg error" hidden></div>
             <div id="auth-success" class="auth-msg success" hidden></div>
-            <button type="submit" id="auth-submit-btn" class="auth-btn-primary">Sign In</button>
+            <button type="submit" id="auth-submit-btn" class="auth-btn-primary">
+              Sign In
+            </button>
           </form>
 
           <div id="auth-user-panel" class="auth-user-panel" hidden>
@@ -318,8 +354,20 @@
             </div>
             <div id="auth-sync-status" class="auth-status-text"></div>
             <div class="auth-panel-actions">
-              <button type="button" id="auth-sync-now-btn" class="auth-btn-primary">Sync Now</button>
-              <button type="button" id="auth-signout-btn" class="auth-btn-secondary">Sign Out</button>
+              <button
+                type="button"
+                id="auth-sync-now-btn"
+                class="auth-btn-primary"
+              >
+                Sync Now
+              </button>
+              <button
+                type="button"
+                id="auth-signout-btn"
+                class="auth-btn-secondary"
+              >
+                Sign Out
+              </button>
             </div>
           </div>
         </div>
