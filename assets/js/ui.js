@@ -4,6 +4,7 @@ import {
   toggleFavorite,
   isRecipeSaved,
   setPage,
+  setSortMode,
   getCurrentPageRecipes,
   updateSavedIdsFromSync,
 } from "./state.js";
@@ -24,7 +25,6 @@ export const elements = {
   savedCounter: document.getElementById("saved-counter"),
   tabAll: document.getElementById("tab-all"),
   tabSaved: document.getElementById("tab-saved"),
-  themeToggle: document.getElementById("theme-toggle"),
   authBtn: document.getElementById("auth-btn"),
   modal: document.getElementById("recipe-modal"),
   modalImg: document.getElementById("modal-img"),
@@ -41,6 +41,11 @@ export const elements = {
   toggleOilDropdownBtn: document.getElementById("toggle-oil-dropdown-btn"),
   oilDropdown: document.getElementById("oil-dropdown"),
   oilOptionsList: document.getElementById("oil-options-list"),
+  // Sort elements
+  sortCombobox: document.getElementById("sort-combobox"),
+  sortBtn: document.getElementById("sort-btn"),
+  sortBtnLabel: document.getElementById("sort-btn-label"),
+  sortDropdown: document.getElementById("sort-dropdown"),
   // Auth dialog elements
   authModal: document.getElementById("auth-modal"),
   closeAuthModal: document.getElementById("close-auth-modal"),
@@ -109,6 +114,106 @@ function highlightMatch(text, query) {
   const safeQuery = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const regex = new RegExp(`(${safeQuery})`, "gi");
   return safeText.replace(regex, `<mark class="combobox-match">$1</mark>`);
+}
+
+// ============================================================
+// SORT DROPDOWN LOGIC
+// ============================================================
+export function openSortDropdown() {
+  if (!elements.sortDropdown) return;
+  elements.sortDropdown.hidden = false;
+  elements.sortCombobox?.classList.add("is-open");
+  elements.sortBtn?.setAttribute("aria-expanded", "true");
+}
+
+export function closeSortDropdown() {
+  if (!elements.sortDropdown) return;
+  elements.sortDropdown.hidden = true;
+  elements.sortCombobox?.classList.remove("is-open");
+  elements.sortBtn?.setAttribute("aria-expanded", "false");
+}
+
+export function isSortDropdownOpen() {
+  return elements.sortDropdown && !elements.sortDropdown.hidden;
+}
+
+export function renderSortControls() {
+  if (!elements.sortBtn || !elements.sortBtnLabel) return;
+
+  const mode = state.sortMode;
+  const isDefault = mode === "default";
+
+  elements.sortBtn.classList.toggle("is-active", !isDefault);
+
+  if (mode === "shortest") {
+    elements.sortBtnLabel.textContent = "Shortest first";
+    elements.sortBtn.title = "Sorted by shortest recipes (fewest oils)";
+  } else if (mode === "longest") {
+    elements.sortBtnLabel.textContent = "Longest first";
+    elements.sortBtn.title = "Sorted by longest recipes (most oils)";
+  } else {
+    elements.sortBtnLabel.textContent = "Sort by oils";
+    elements.sortBtn.title = "Sort blends by number of oils";
+  }
+
+  const options = elements.sortDropdown?.querySelectorAll(".sort-option") || [];
+  options.forEach((opt) => {
+    const optSort = opt.getAttribute("data-sort");
+    const isSelected = optSort === mode;
+    opt.classList.toggle("is-selected", isSelected);
+    opt.setAttribute("aria-selected", isSelected ? "true" : "false");
+    const checkEl = opt.querySelector(".sort-check");
+    if (checkEl) {
+      checkEl.innerHTML = isSelected ? CHECK_ICON_SVG : "";
+    }
+  });
+}
+
+export function setupSortEvents() {
+  elements.sortBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (isSortDropdownOpen()) {
+      closeSortDropdown();
+    } else {
+      closeOilDropdown();
+      openSortDropdown();
+    }
+  });
+
+  const options = elements.sortDropdown?.querySelectorAll(".sort-option") || [];
+  options.forEach((opt) => {
+    const select = () => {
+      const sortValue = opt.getAttribute("data-sort") || "default";
+      setSortMode(sortValue);
+      renderAll();
+      closeSortDropdown();
+    };
+
+    opt.addEventListener("click", (e) => {
+      e.stopPropagation();
+      select();
+    });
+
+    opt.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        select();
+      }
+    });
+  });
+
+  document.addEventListener("pointerdown", (e) => {
+    if (!elements.sortCombobox?.contains(e.target)) {
+      closeSortDropdown();
+    }
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && isSortDropdownOpen()) {
+      closeSortDropdown();
+      elements.sortBtn?.focus();
+    }
+  });
 }
 
 // ============================================================
@@ -582,7 +687,10 @@ export function renderActiveFilters() {
     return;
   }
 
-  const hasFilters = state.selectedOils.length > 0;
+  const hasOilFilters = state.selectedOils.length > 0;
+  const hasSortFilter = state.sortMode !== "default";
+  const hasFilters = hasOilFilters || hasSortFilter;
+
   if (elements.clearFiltersBtn) elements.clearFiltersBtn.hidden = !hasFilters;
 
   state.selectedOils.forEach((name) => {
@@ -646,6 +754,7 @@ export function renderGrid() {
 
   itemsToShow.forEach((recipe, index) => {
     const isSaved = isRecipeSaved(recipe.id);
+    const oilCount = recipe.ingredients.length;
 
     const card = document.createElement("article");
     card.className = "card";
@@ -772,7 +881,6 @@ export function renderTabs() {
   if (elements.tabSaved) elements.tabSaved.classList.toggle("active", isSaved);
   if (elements.tabAll) elements.tabAll.classList.toggle("active", !isSaved);
 
-  // Hide the oil filter toolbar and chips on the Favorites screen
   if (elements.toolbar) {
     elements.toolbar.hidden = isSaved;
   }
@@ -781,11 +889,13 @@ export function renderTabs() {
   }
   if (isSaved) {
     closeOilDropdown();
+    closeSortDropdown();
   }
 }
 
 export function renderAll() {
   renderTabs();
+  renderSortControls();
   renderActiveFilters();
   renderSavedCounter();
   renderGrid();

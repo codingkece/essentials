@@ -1,8 +1,8 @@
-import { initTheme } from "./theme.js";
 import {
   setData,
   setViewMode,
   clearAllFilters,
+  setSortMode,
   initSavedFavorites,
   updateSavedIdsFromSync,
   filterRecipes,
@@ -19,6 +19,7 @@ import {
   shareCurrentRecipe,
   setupAuthEvents,
   setupOilComboboxEvents,
+  setupSortEvents,
   updateAuthModalView,
 } from "./ui.js";
 import {
@@ -31,6 +32,15 @@ import {
 
 function setupEventListeners() {
   setupOilComboboxEvents();
+  setupSortEvents();
+
+  elements.clearFiltersBtn?.addEventListener("click", () => {
+    if (elements.oilSearchInput) elements.oilSearchInput.value = "";
+    if (elements.clearOilInputBtn) elements.clearOilInputBtn.hidden = true;
+    clearAllFilters();
+    setSortMode("default");
+    renderAll();
+  });
 
   elements.clearFiltersBtn?.addEventListener("click", () => {
     if (elements.oilSearchInput) elements.oilSearchInput.value = "";
@@ -130,7 +140,6 @@ function setupEventListeners() {
 
 async function init() {
   try {
-    initTheme(elements.themeToggle);
     setupEventListeners();
 
     if (elements.resultCount) {
