@@ -299,8 +299,13 @@ export function renderOilDropdownOptions() {
       <span class="combobox-count-badge">${count}</span>
     `;
 
-    item.addEventListener("pointerdown", (e) => {
-      e.preventDefault(); // Keep focus in input
+    item.addEventListener("mousedown", (e) => {
+      e.preventDefault(); // Keep focus in input on mouse click
+    });
+
+    item.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       selectOilFromCombobox(oil);
     });
 
